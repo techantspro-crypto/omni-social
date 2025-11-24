@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 // [修正] 修正回相對路徑，因為 main.jsx 和 OmniSocialApp.jsx 是同一個資料夾的檔案
-import App from './OmniSocialApp.jsx' 
+import App from '/OmniSocialApp.jsx' 
 import './index.css'
 
 // 錯誤邊界：當程式崩潰時顯示錯誤訊息，而不是白畫面
