@@ -216,8 +216,15 @@ const AuthScreen = ({ onLogin }) => {
             <button onClick={() => isLogin ? onLogin({role:'admin', username:'admin'}) : alert("申請已提交")} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">{isLogin?'登入':'提交'}</button>
           </div>
           {isLogin && <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* 這就是 Google 圖示按鈕的位置 */}
             <button onClick={() => handleSocial('google')} className="border p-2 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 font-bold text-slate-600">
-              <svg width="18" height="18" viewBox="0 0 24 24"><path d="M23.52 12.273c0-.851-.076-1.67-.218-2.455H12v4.642h6.455c-.278 1.504-1.124 2.779-2.396 3.632v3.02h3.88c2.27-2.09 3.58-5.166 3.58-8.839z" fill="#4285F4"/><path d="M12 24c3.24 0 5.957-1.074 7.942-2.909l-3.88-3.02c-1.075.72-2.451 1.146-4.062 1.146-3.127 0-5.776-2.112-6.722-4.952H1.295v3.116C3.263 21.294 7.347 24 12 24z" fill="#34A853"/><path d="M5.278 14.265c-.248-.743-.389-1.536-.389-2.365 0-.829.141-1.622.389-2.365V6.419H1.295C.47 8.066 0 9.93 0 12c0 2.07.47 3.934 1.295 5.581l3.983-3.116z" fill="#FBBC05"/><path d="M12 4.773c1.762 0 3.345.606 4.589 1.796l3.443-3.443C17.952 1.187 15.235 0 12 0 7.347 0 3.263 2.706 1.295 6.419l3.983 3.116c.946-2.84 3.595-4.952 6.722-4.952z" fill="#EA4335"/></svg> Google
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path d="M23.52 12.273c0-.851-.076-1.67-.218-2.455H12v4.642h6.455c-.278 1.504-1.124 2.779-2.396 3.632v3.02h3.88c2.27-2.09 3.58-5.166 3.58-8.839z" fill="#4285F4"/>
+                <path d="M12 24c3.24 0 5.957-1.074 7.942-2.909l-3.88-3.02c-1.075.72-2.451 1.146-4.062 1.146-3.127 0-5.776-2.112-6.722-4.952H1.295v3.116C3.263 21.294 7.347 24 12 24z" fill="#34A853"/>
+                <path d="M5.278 14.265c-.248-.743-.389-1.536-.389-2.365 0-.829.141-1.622.389-2.365V6.419H1.295C.47 8.066 0 9.93 0 12c0 2.07.47 3.934 1.295 5.581l3.983-3.116z" fill="#FBBC05"/>
+                <path d="M12 4.773c1.762 0 3.345.606 4.589 1.796l3.443-3.443C17.952 1.187 15.235 0 12 0 7.347 0 3.263 2.706 1.295 6.419l3.983 3.116c.946-2.84 3.595-4.952 6.722-4.952z" fill="#EA4335"/>
+              </svg> 
+              Google
             </button>
             <button onClick={() => handleSocial('facebook')} className="border p-2 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 font-bold text-slate-600"><Facebook size={18} className="text-blue-600"/> Facebook</button>
           </div>}
