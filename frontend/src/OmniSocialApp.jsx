@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Brain, Zap, Plus, Edit, Save, Cpu
+  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Brain, Zap, Plus, Edit, Save, Cpu, AlertTriangle
 } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDocs, setDoc, deleteDoc, orderBy, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDocs, setDoc, deleteDoc, orderBy, getDoc, writeBatch } from 'firebase/firestore';
 
 // --- Initial Data ---
 const INITIAL_CHATS = [
@@ -37,21 +37,29 @@ const INITIAL_AI_CONFIG = {
   id: 'config', provider: 'openai', apiKey: '', model: 'gpt-4o', systemPrompt: '你是一個專業的社群客服助手，語氣親切、專業，請用繁體中文回答。', temperature: 0.7
 };
 
+const INITIAL_KNOWLEDGE_BASE = [
+  { keyword: '營業時間', content: '我們的營業時間是週一至週五，早上 10:00 到晚上 9:00。週末休息。' },
+  { keyword: '退換貨', content: '商品收到後 7 天內保持包裝完整皆可申請退換貨。請私訊小幫手索取退貨代碼。' },
+  { keyword: '運費', content: '全館滿 $2000 免運費，未滿則收取 $80 運費。' },
+  { keyword: '現貨', content: '官網標示「現貨」之商品，下單後 24 小時內出貨。預購商品需等待 7-14 個工作天。' }
+];
+
+
 // --- Firebase Initialization ---
+// [重要] 請將下方的 firebaseConfig 替換為您從 Firebase Console 複製的真實設定
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDy8_xxxxxxxxxxxxxxx",
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project",
+  storageBucket: "your-project.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:xxxxxx"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 // [FIX] Sanitize appId to remove slashes which break Firestore collection paths
-// Example: "c_..._frontend/OmniSocialApp.jsx-584" -> "c_..._frontend_OmniSocialApp.jsx-584"
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const appId = rawAppId.replace(/\//g, '_');
 
@@ -143,11 +151,11 @@ const InboxView = ({ chats, activePlatformFilter, setActivePlatformFilter, curre
   );
 };
 
-// --- Settings View (Complete Logic) ---
 const SettingsView = ({ platforms }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [activePlatform, setActivePlatform] = useState(null);
   const [connectingId, setConnectingId] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   const handleConnectClick = (platform) => { setActivePlatform(platform); setModalOpen(true); };
   const handleDisconnect = async (id, docId) => { if (confirm("解除連接？")) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', docId), { connected: false, accountName: null }); };
@@ -161,10 +169,41 @@ const SettingsView = ({ platforms }) => {
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', activePlatform.id), { connected: true, accountName: accountName });
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'chats'), { user: `${activePlatform.name} System`, platform: activePlatform.id, avatar: `https://ui-avatars.com/api/?name=${activePlatform.name}`, lastMessage: `系統連接成功`, timestamp: new Date().toLocaleTimeString(), unread: 1, history: [{ sender: 'ai', text: `${activePlatform.name} 連接成功！` }] });
         alert(`${activePlatform.name} 連接成功！`);
-      } catch(e) { console.error(e); }
+      } catch(e) { console.error(e); alert("連接失敗: " + e.message); }
       setConnectingId(null);
       setActivePlatform(null);
     }, 1500);
+  };
+
+  const initializePlatforms = async () => {
+    setIsInitializing(true);
+    try {
+      const batch = writeBatch(db);
+      INITIAL_PLATFORMS.forEach(p => {
+        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'platforms', p.id);
+        batch.set(ref, p);
+      });
+      
+      // Also initialize chats if needed
+      const chatsRef = collection(db, 'artifacts', appId, 'public', 'data', 'chats');
+      INITIAL_CHATS.forEach(async (chat) => {
+        await addDoc(chatsRef, chat);
+      });
+
+      // Also initialize knowledge base
+      const kbRef = collection(db, 'artifacts', appId, 'public', 'data', 'knowledge_base');
+      INITIAL_KNOWLEDGE_BASE.forEach(async (kb) => {
+        await addDoc(kbRef, kb);
+      });
+      
+      await batch.commit();
+      alert("資料庫已強制重置！請重新整理頁面查看效果。");
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
+      alert("初始化失敗，請檢查 Firebase Rules: " + e.message);
+    }
+    setIsInitializing(false);
   };
 
   const renderInputs = () => {
@@ -177,14 +216,81 @@ const SettingsView = ({ platforms }) => {
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 p-8 relative">
-      <h1 className="text-2xl font-bold mb-6">平台帳戶整合</h1>
-      <div className="grid grid-cols-2 gap-6">{platforms.map(p => <div key={p.id} className="bg-white p-6 rounded-xl border shadow-sm"><div className="flex justify-between mb-4"><div className="flex gap-3 items-center"><PlatformIcon platform={p.id} size={24}/><h3 className="font-bold">{p.name}</h3></div>{p.connected ? <button onClick={() => handleDisconnect(p.id, p.id)} className="text-red-500"><Trash2/></button> : <button onClick={() => handleConnectClick(p)} className="bg-indigo-50 text-indigo-600 px-4 py-1 rounded font-bold text-sm">連接</button>}</div><p className="text-sm text-slate-500 mb-4">{p.description}</p>{p.connected ? <div className="bg-slate-50 p-2 rounded flex gap-2 text-sm items-center"><CheckCircle size={14} className="text-green-500"/>{p.accountName}</div> : <div className="text-center p-2 border border-dashed rounded text-xs text-slate-400">未設定</div>}{connectingId===p.id && <div className="absolute inset-0 bg-white/80 flex items-center justify-center font-bold text-indigo-600">連接中...</div>}</div>)}</div>
-      {modalOpen && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white p-6 rounded-xl w-96"><div className="flex justify-between mb-4"><h3 className="font-bold">連接 {activePlatform?.name}</h3><button onClick={() => setModalOpen(false)}><XIcon/></button></div>{renderInputs()}</div></div>}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">平台帳戶整合 ({platforms?.length || 0})</h1>
+        <button onClick={initializePlatforms} disabled={isInitializing} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+          {isInitializing ? <RefreshCw size={16} className="animate-spin"/> : <AlertTriangle size={16}/>}
+          強制初始化資料
+        </button>
+      </div>
+      
+      {!platforms || platforms.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-300 rounded-xl">
+          <Database size={48} className="text-slate-300 mb-4"/>
+          <p className="text-slate-500 mb-4">目前沒有平台資料或資料庫未連接</p>
+          <button onClick={initializePlatforms} className="bg-indigo-600 text-white px-6 py-2 rounded-xl">立即寫入預設資料</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {platforms.map(p => (
+            <div key={p.id} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex justify-between mb-4">
+                <div className="flex gap-3 items-center">
+                  <PlatformIcon platform={p.id} size={24}/>
+                  <h3 className="font-bold text-lg">{p.name}</h3>
+                </div>
+                {p.connected ? (
+                  <button onClick={() => handleDisconnect(p.id, p.id)} className="text-slate-400 hover:text-red-500 p-2">
+                    <Trash2 size={20}/>
+                  </button>
+                ) : (
+                  <button onClick={() => handleConnectClick(p)} className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-lg font-bold text-sm hover:bg-indigo-100">
+                    連接
+                  </button>
+                )}
+              </div>
+              <p className="text-sm text-slate-500 mb-4">{p.description}</p>
+              {p.connected ? (
+                <div className="bg-slate-50 p-2 rounded-lg flex gap-2 text-sm items-center border border-slate-100">
+                  <CheckCircle size={14} className="text-green-500"/>
+                  <span className="font-mono text-slate-700">{p.accountName}</span>
+                </div>
+              ) : (
+                <div className="text-center p-2 border border-dashed border-slate-200 rounded-lg text-xs text-slate-400">
+                  尚未設定帳戶
+                </div>
+              )}
+              {connectingId === p.id && (
+                <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center rounded-xl z-10">
+                  <div className="flex flex-col items-center animate-pulse">
+                    <div className="text-indigo-600 font-bold">正在連接...</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modalOpen && activePlatform && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex justify-between mb-6 border-b pb-4">
+              <h3 className="font-bold text-xl flex items-center gap-2">
+                <PlatformIcon platform={activePlatform.id} /> 連接 {activePlatform.name}
+              </h3>
+              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <XIcon/>
+              </button>
+            </div>
+            {renderInputs()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// --- Auth Screen (With Google Icon) ---
 const AuthScreen = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({ username: '', password: '', name: '', email: '', reason: '' });
@@ -216,15 +322,8 @@ const AuthScreen = ({ onLogin }) => {
             <button onClick={() => isLogin ? onLogin({role:'admin', username:'admin'}) : alert("申請已提交")} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">{isLogin?'登入':'提交'}</button>
           </div>
           {isLogin && <div className="grid grid-cols-2 gap-3 mb-6">
-            {/* 這就是 Google 圖示按鈕的位置 */}
             <button onClick={() => handleSocial('google')} className="border p-2 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 font-bold text-slate-600">
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path d="M23.52 12.273c0-.851-.076-1.67-.218-2.455H12v4.642h6.455c-.278 1.504-1.124 2.779-2.396 3.632v3.02h3.88c2.27-2.09 3.58-5.166 3.58-8.839z" fill="#4285F4"/>
-                <path d="M12 24c3.24 0 5.957-1.074 7.942-2.909l-3.88-3.02c-1.075.72-2.451 1.146-4.062 1.146-3.127 0-5.776-2.112-6.722-4.952H1.295v3.116C3.263 21.294 7.347 24 12 24z" fill="#34A853"/>
-                <path d="M5.278 14.265c-.248-.743-.389-1.536-.389-2.365 0-.829.141-1.622.389-2.365V6.419H1.295C.47 8.066 0 9.93 0 12c0 2.07.47 3.934 1.295 5.581l3.983-3.116z" fill="#FBBC05"/>
-                <path d="M12 4.773c1.762 0 3.345.606 4.589 1.796l3.443-3.443C17.952 1.187 15.235 0 12 0 7.347 0 3.263 2.706 1.295 6.419l3.983 3.116c.946-2.84 3.595-4.952 6.722-4.952z" fill="#EA4335"/>
-              </svg> 
-              Google
+              <svg width="18" height="18" viewBox="0 0 24 24"><path d="M23.52 12.273c0-.851-.076-1.67-.218-2.455H12v4.642h6.455c-.278 1.504-1.124 2.779-2.396 3.632v3.02h3.88c2.27-2.09 3.58-5.166 3.58-8.839z" fill="#4285F4"/><path d="M12 24c3.24 0 5.957-1.074 7.942-2.909l-3.88-3.02c-1.075.72-2.451 1.146-4.062 1.146-3.127 0-5.776-2.112-6.722-4.952H1.295v3.116C3.263 21.294 7.347 24 12 24z" fill="#34A853"/><path d="M5.278 14.265c-.248-.743-.389-1.536-.389-2.365 0-.829.141-1.622.389-2.365V6.419H1.295C.47 8.066 0 9.93 0 12c0 2.07.47 3.934 1.295 5.581l3.983-3.116z" fill="#FBBC05"/><path d="M12 4.773c1.762 0 3.345.606 4.589 1.796l3.443-3.443C17.952 1.187 15.235 0 12 0 7.347 0 3.263 2.706 1.295 6.419l3.983 3.116c.946-2.84 3.595-4.952 6.722-4.952z" fill="#EA4335"/></svg> Google
             </button>
             <button onClick={() => handleSocial('facebook')} className="border p-2 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 font-bold text-slate-600"><Facebook size={18} className="text-blue-600"/> Facebook</button>
           </div>}
@@ -275,7 +374,7 @@ const AnalyticsView = ({ posts }) => {
     <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8">
       <div className="mb-8"><h1 className="text-2xl font-bold text-slate-800 mb-2">爆文與趨勢分析</h1><p className="text-slate-500">針對高流量內容進行 AI 語意與情緒分析。</p></div>
       <div className="flex flex-wrap gap-4 mb-6 items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex items-center gap-2"><Filter size={18} className="text-slate-500" /><span className="text-sm font-medium text-slate-700">平台:</span><select className="bg-slate-100 border-none rounded-lg text-sm py-1.5" value={filterType} onChange={(e) => setFilterType(e.target.value)}><option value="all">全部</option><option value="instagram">Instagram</option><option value="threads">Threads</option><option value="tiktok">TikTok</option></select></div>
+        <div className="flex items-center gap-2"><Filter size={18} className="text-slate-500" /><span className="text-sm font-medium text-slate-700">平台:</span><select className="bg-slate-100 border-none rounded-lg text-sm py-1.5" value={filterType} onChange={(e) => setFilterType(e.target.value)}><option value="all">全部</option><option value="instagram">Instagram</option><option value="youtube">YouTube</option><option value="xiaohongshu">小紅書</option><option value="threads">Threads</option><option value="tiktok">TikTok</option></select></div>
         <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200"><TrendingUp size={16} className="text-red-500 ml-1" /><span className="text-sm font-medium text-slate-700">觀看數 &ge;</span><input type="number" value={viewThreshold} onChange={(e) => setViewThreshold(Number(e.target.value))} className="w-24 px-2 py-1 bg-white border rounded text-sm" step="1000" /></div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -339,7 +438,7 @@ const App = () => {
     const syncCollection = (col, initial) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', col), snap => {
       if (snap.empty && initial) initial.forEach(i => col==='platforms'?setDoc(doc(db,'artifacts',appId,'public','data',col,i.id),i):addDoc(collection(db,'artifacts',appId,'public','data',col),i));
       setData(prev => ({...prev, [col==='app_users'?'users':col]: snap.docs.map(d => ({id:d.id, ...d.data()}))}));
-    });
+    }, (error) => console.error(`Error syncing ${col}:`, error)); // FIXED: collName typo
 
     const syncAiConfig = () => {
       const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'ai_settings', 'config');
