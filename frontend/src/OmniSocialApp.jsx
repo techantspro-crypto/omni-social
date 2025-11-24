@@ -47,6 +47,7 @@ const INITIAL_KNOWLEDGE_BASE = [
 
 // --- Firebase Initialization ---
 // [重要] 請將下方的 firebaseConfig 替換為您從 Firebase Console 複製的真實設定
+// ⚠️⚠️ 請記得在您的電腦上把這裡換成真的 Key ⚠️⚠️
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyDy8_xxxxxxxxxxxxxxx",
   authDomain: "your-project.firebaseapp.com",
