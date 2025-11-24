@@ -1,25 +1,21 @@
 /**
  * OmniSocial 後端伺服器 (Node.js + Express + Firebase Admin)
- * 啟動指令: npm install && npm start
+ * 用途：接收社群平台 Webhook、同步訂單、基礎自動回覆
  */
 
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
-const { OpenAI } = require('openai');
 const axios = require('axios');
 
-// ------------------------------------------------------------------
-// 1. 初始化設定
-// ------------------------------------------------------------------
-
-// 檢查金鑰是否存在
+// 1. 初始化 Firebase Admin
 try {
   var serviceAccount = require('./serviceAccountKey.json');
 } catch (e) {
-  console.error("錯誤: 找不到 'serviceAccountKey.json'。請確認您已從 Firebase 下載並放入此資料夾。");
+  console.error("錯誤: 找不到 'serviceAccountKey.json'。請確認檔案已放入 backend 資料夾。");
   process.exit(1);
 }
 
@@ -30,27 +26,22 @@ initializeApp({
 const db = getFirestore();
 const app = express();
 const PORT = process.env.PORT || 3000;
-const APP_ID = 'default-app-id'; // 與前端對應的 App ID
+const APP_ID = 'default-app-id';
 
+app.use(cors());
 app.use(bodyParser.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 // ------------------------------------------------------------------
-// 2. 路由 (Routes)
+// 路由
 // ------------------------------------------------------------------
 
-// 首頁測試
 app.get('/', (req, res) => {
-  res.send('OmniSocial Backend is Running! 🚀');
+  res.send('OmniSocial Core Backend is Running! 🚀');
 });
 
-// Meta (FB/IG) Webhook 驗證
+// 平台 Webhook 驗證 (Meta 通用)
 app.get('/webhook', (req, res) => {
   const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
-  
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -65,7 +56,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// 接收訊息 Webhook
+// 接收訊息通知
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
@@ -74,7 +65,7 @@ app.post('/webhook', async (req, res) => {
       const webhook_event = entry.messaging[0];
       const senderPsid = webhook_event.sender.id;
       
-      if (webhook_event.message && !webhook_event.message.is_echo) {
+      if (webhook_event.message) {
         await handleMessage(senderPsid, webhook_event.message, body.object);
       }
     }
@@ -84,10 +75,10 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// 訂單同步 Webhook (來自 Shopify/WooCommerce)
+// 訂單同步 Webhook
 app.post('/webhook/orders', async (req, res) => {
   const orderData = req.body;
-  console.log("收到新訂單:", orderData);
+  console.log("收到外部訂單:", orderData);
 
   try {
     await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('orders').add({
@@ -100,7 +91,7 @@ app.post('/webhook/orders', async (req, res) => {
       date: new Date().toLocaleDateString(),
       synced: true
     });
-    res.status(200).send('Order Synced to Firebase');
+    res.status(200).send('Order Synced');
   } catch (e) {
     console.error("訂單同步失敗:", e);
     res.status(500).send('Error');
@@ -108,12 +99,12 @@ app.post('/webhook/orders', async (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// 3. 邏輯處理
+// 邏輯處理
 // ------------------------------------------------------------------
 
 async function handleMessage(senderPsid, receivedMessage, platform) {
   const userText = receivedMessage.text;
-  console.log(`[New Message] ID:${senderPsid} Text:${userText}`);
+  console.log(`收到訊息: ${userText} from ${senderPsid}`);
 
   const chatRef = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('chats').doc(senderPsid);
   const chatDoc = await chatRef.get();
@@ -122,7 +113,6 @@ async function handleMessage(senderPsid, receivedMessage, platform) {
   if (chatDoc.exists) {
     history = chatDoc.data().history || [];
   } else {
-    // 新建對話
     await chatRef.set({
       user: `User ${senderPsid.substring(0,4)}`,
       platform: platform === 'instagram' ? 'instagram' : 'facebook',
@@ -132,77 +122,46 @@ async function handleMessage(senderPsid, receivedMessage, platform) {
     });
   }
 
-  // 更新用戶訊息
   const newHistory = [...history, { sender: 'user', text: userText }];
   
   await chatRef.update({
     history: newHistory,
-    lastMessage: "您: " + userText,
+    lastMessage: userText,
     timestamp: new Date().toLocaleTimeString(),
     unread: (chatDoc.data()?.unread || 0) + 1
   });
 
-  // 觸發 AI
-  await generateAIReply(senderPsid, newHistory, chatRef);
+  // [基礎自動回覆] 關鍵字觸發
+  if (userText.includes("營業時間")) {
+      await sendAutoReply(senderPsid, "我們營業時間是週一至週五 10:00-21:00 喔！", chatRef, newHistory);
+  } else if (userText.includes("地址")) {
+      await sendAutoReply(senderPsid, "門市地址：台北市信義區...", chatRef, newHistory);
+  }
 }
 
-async function generateAIReply(senderId, history, chatRef) {
-  if (!process.env.OPENAI_API_KEY) return;
-
-  try {
-    // 取得 AI 設定 (可選)
-    const configDoc = await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('ai_settings').doc('config').get();
-    const systemPrompt = configDoc.exists ? configDoc.data().systemPrompt : "你是一個專業的客服助手。";
-
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history.slice(-5).map(msg => ({ // 只取最近 5 則以節省 Token
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text
-      }))
-    ];
-
-    const completion = await openai.chat.completions.create({
-      messages: messages,
-      model: "gpt-4",
-    });
-
-    const aiText = completion.choices[0].message.content;
-
-    // 更新 AI 回覆到資料庫
-    const updatedHistory = [...history, { sender: 'ai', text: aiText }];
+async function sendAutoReply(senderId, text, chatRef, history) {
+    // 1. 更新資料庫
+    const updatedHistory = [...history, { sender: 'ai', text: text }];
     await chatRef.update({
-      history: updatedHistory,
-      lastMessage: aiText,
-      unread: 0
+        history: updatedHistory,
+        lastMessage: text,
+        unread: 0
     });
 
-    // 回傳給平台 (取消註解以啟用)
-    // await sendToPlatform(senderId, aiText);
-
-  } catch (error) {
-    console.error("AI Generation Error:", error);
-  }
+    // 2. 發送給 FB/IG API (需設定 Token)
+    const PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
+    if (PAGE_ACCESS_TOKEN) {
+        try {
+            await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+                recipient: { id: senderId },
+                message: { text: text }
+            });
+        } catch (e) {
+            console.error("API 發送失敗:", e.message);
+        }
+    }
 }
 
-async function sendToPlatform(recipientId, responseText) {
-  const PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
-  if (!PAGE_ACCESS_TOKEN) return;
-
-  try {
-    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      recipient: { id: recipientId },
-      message: { text: responseText }
-    });
-  } catch (error) {
-    console.error("Platform Send Error:", error.response ? error.response.data : error.message);
-  }
-}
-
-// 啟動
 app.listen(PORT, () => {
-  console.log(`=========================================`);
-  console.log(`✅ 後端伺服器已啟動: http://localhost:${PORT}`);
-  console.log(`✅ Webhook 路徑: /webhook`);
-  console.log(`=========================================`);
+  console.log(`✅ 核心後端伺服器已啟動: http://localhost:${PORT}`);
 });
