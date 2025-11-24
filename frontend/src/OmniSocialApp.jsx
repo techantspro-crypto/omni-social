@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Brain, Zap, Plus, Edit, Save, Cpu, AlertTriangle, Sparkles
+  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Zap, Plus, Edit, Save, Cpu, AlertTriangle
 } from 'lucide-react';
 
-// --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDocs, setDoc, deleteDoc, orderBy, getDoc, writeBatch } from 'firebase/firestore';
@@ -25,8 +24,7 @@ const INITIAL_PLATFORMS = [
   { id: 'telegram', name: 'Telegram', type: 'token', description: '輸入 Bot Token', connected: false, accountName: null },
   { id: 'youtube', name: 'YouTube', type: 'oauth', description: '管理頻道留言', connected: false, accountName: null },
 ];
-const INITIAL_AI_CONFIG = { id: 'config', provider: 'openai', apiKey: '', model: 'gpt-4o', systemPrompt: '你是一個專業客服。', temperature: 0.7 };
-const INITIAL_KNOWLEDGE_BASE = [{ keyword: '營業時間', content: '週一至週五 10:00-21:00' }];
+const INITIAL_KB = [{ keyword: '營業時間', content: '週一至週五 10:00-21:00' }];
 
 // --- Firebase Initialization ---
 // [重要] 請在此填入您真實的 Firebase Config
@@ -36,7 +34,7 @@ const firebaseConfig = {
   projectId: "omnisocial-728c9",
   storageBucket: "omnisocial-728c9.firebasestorage.app",
   messagingSenderId: "146517687086",
-  appId: "1:117516494383:web:997586b9b2626f31c94633"
+  appId: "1:146517687086:web:f368ee90f466c5022958bf"
 };
 
 let app, auth, db;
@@ -44,10 +42,8 @@ let configError = false;
 
 try {
   if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("請填入")) {
-    console.warn("尚未設定 Firebase Config");
     configError = true;
   } else {
-    // 防止重複初始化
     if (typeof window !== 'undefined' && !window._firebaseApp) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
@@ -67,7 +63,7 @@ try {
 const rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'default-app-id';
 const appId = rawAppId.replace(/\//g, '_');
 
-// --- Sub-Components (Defined BEFORE App) ---
+// --- Sub-Components (Defined BEFORE App to prevent ReferenceError) ---
 
 const PlatformIcon = ({ platform, size = 16 }) => {
   const p = platform ? platform.toLowerCase() : '';
@@ -78,14 +74,12 @@ const PlatformIcon = ({ platform, size = 16 }) => {
   return <MessageCircle size={size}/>;
 };
 
-// AuthScreen 定義在最上方
 const AuthScreen = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [formData, setFormData] = useState({ username: 'admin', password: 'password', email: '' });
+  const [formData, setFormData] = useState({ username: 'admin', password: 'password' });
   
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    // 模擬登入成功
     onLogin({role: 'admin', username: formData.username});
   };
 
@@ -94,13 +88,10 @@ const AuthScreen = ({ onLogin }) => {
       <div className="bg-white p-8 rounded-xl w-full max-w-md">
         <h2 className="text-2xl font-bold mb-6 text-center">{isLogin ? '登入 OmniAI' : '註冊'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input className="w-full p-3 border rounded" placeholder="帳號" value={formData.username} onChange={e=>setFormData({...formData, username:e.target.value})}/>
-          <input className="w-full p-3 border rounded" type="password" placeholder="密碼" value={formData.password} onChange={e=>setFormData({...formData, password:e.target.value})}/>
+          <input className="w-full p-3 border rounded" placeholder="帳號 (admin)" value={formData.username} onChange={e=>setFormData({...formData, username:e.target.value})}/>
+          <input className="w-full p-3 border rounded" type="password" placeholder="密碼 (password)" value={formData.password} onChange={e=>setFormData({...formData, password:e.target.value})}/>
           <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded font-bold">{isLogin?'登入':'註冊'}</button>
         </form>
-        <div className="mt-4 text-center text-sm text-slate-500">
-           (測試帳號: admin / password)
-        </div>
         <button onClick={()=>setIsLogin(!isLogin)} className="w-full mt-4 text-sm text-indigo-600 text-center block hover:underline">{isLogin?'註冊帳號':'返回登入'}</button>
       </div>
     </div>
@@ -108,10 +99,23 @@ const AuthScreen = ({ onLogin }) => {
 };
 
 const SettingsView = ({ platforms }) => {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [activePlatform, setActivePlatform] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
 
+  const handleConnectClick = (platform) => { setActivePlatform(platform); setModalOpen(true); };
+  const handleDisconnect = async (id, docId) => { if (confirm("解除連接？")) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', docId), { connected: false, accountName: null }); };
+  
+  const confirmConnection = async (accountName) => {
+    if (!activePlatform) return;
+    try {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', activePlatform.id), { connected: true, accountName: accountName });
+        alert(`${activePlatform.name} 連接成功！`);
+    } catch(e) { console.error(e); alert("連接失敗，請檢查資料庫權限"); }
+    setModalOpen(false); setActivePlatform(null);
+  };
+
   const initializePlatforms = async () => {
-    if(configError) return alert("Firebase 設定有誤，無法寫入");
     setIsInitializing(true);
     try {
       const batch = writeBatch(db);
@@ -137,7 +141,7 @@ const SettingsView = ({ platforms }) => {
           <div className="text-center py-20 bg-white rounded-xl border border-dashed">
               <Database className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-semibold text-gray-900">無資料</h3>
-              <p className="mt-1 text-sm text-gray-500">資料庫目前是空的，請點擊上方按鈕初始化。</p>
+              <p className="mt-1 text-sm text-gray-500">請點擊右上角按鈕進行初始化。</p>
           </div>
       ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -148,22 +152,63 @@ const SettingsView = ({ platforms }) => {
                   <span className={`text-xs px-2 py-1 rounded ${p.connected?'bg-green-100 text-green-700':'bg-slate-100'}`}>{p.connected?'已連接':'未連接'}</span>
                 </div>
                 <p className="text-sm text-slate-500">{p.description}</p>
+                {!p.connected && <button onClick={()=>handleConnectClick(p)} className="mt-4 w-full bg-indigo-50 text-indigo-600 py-2 rounded text-sm font-bold">連接</button>}
+                {p.connected && <button onClick={()=>handleDisconnect(p.id, p.id)} className="mt-4 w-full text-red-500 border border-red-200 py-2 rounded text-sm">解除連接</button>}
               </div>
             ))}
           </div>
       )}
+      {modalOpen && activePlatform && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-xl w-96"><h3 className="font-bold mb-4">連接 {activePlatform.name}</h3><input className="w-full border p-2 mb-4 rounded" placeholder="輸入 API Key 或 帳號"/><button onClick={()=>confirmConnection("已連接")} className="w-full bg-indigo-600 text-white py-2 rounded">確認</button><button onClick={()=>setModalOpen(false)} className="w-full mt-2 text-slate-500">取消</button></div></div>}
     </div>
   );
 };
 
 const DashboardView = ({ chats }) => <div className="p-8"><h1 className="text-2xl font-bold mb-4">儀表板</h1><div className="bg-white p-6 rounded shadow">總訊息數: {(chats||[]).length}</div></div>;
-const InboxView = ({ chats }) => <div className="p-8"><h1 className="text-2xl font-bold mb-4">收件匣</h1><div className="bg-white p-6 rounded shadow">{(chats||[]).map(c=><div key={c.displayId} className="border-b p-2 mb-2">{c.user}: {c.lastMessage}</div>)}</div></div>;
-const AnalyticsView = () => <div className="p-8"><h1 className="text-2xl font-bold">分析</h1><p>功能開發中...</p></div>;
-const OrdersView = () => <div className="p-8"><h1 className="text-2xl font-bold">訂單</h1><p>功能開發中...</p></div>;
-const AIChatbotSettingsView = () => <div className="p-8"><h1 className="text-2xl font-bold">AI 設定</h1><p>功能開發中...</p></div>;
-const UserManagementView = () => <div className="p-8"><h1 className="text-2xl font-bold">用戶管理</h1><p>功能開發中...</p></div>;
 
-// --- Main App Component ---
+const InboxView = ({ chats, activePlatformFilter, setActivePlatformFilter }) => {
+  const [selectedChatId, setSelectedChatId] = useState(null);
+  const [replyText, setReplyText] = useState("");
+
+  useEffect(() => { if (!selectedChatId && chats.length > 0) setSelectedChatId(chats[0].id); }, [chats, selectedChatId]);
+  const displayedChats = chats.filter(chat => activePlatformFilter === 'all' || chat.platform === activePlatformFilter);
+  const selectedChat = chats.find(c => c.id === selectedChatId);
+
+  const handleSendMessage = async () => {
+    if (!replyText.trim() || !selectedChat) return;
+    const chatRef = doc(db, 'artifacts', appId, 'public', 'data', 'chats', selectedChat.id);
+    await updateDoc(chatRef, { history: [...selectedChat.history, { sender: 'admin', text: replyText }], lastMessage: "您: " + replyText, timestamp: new Date().toLocaleTimeString(), unread: 0 });
+    setReplyText("");
+  };
+
+  // 簡單的規則式自動回覆 (不使用 Gemini)
+  const handleAutoReply = () => {
+      if(!selectedChat) return;
+      let reply = "您好，專人稍後會為您服務。";
+      if(selectedChat.lastMessage.includes("營業時間")) reply = "我們的營業時間是週一至週五 10:00-21:00。";
+      else if(selectedChat.lastMessage.includes("現貨")) reply = "目前這款商品還有現貨喔！";
+      setReplyText(reply);
+  };
+
+  return (
+    <div className="flex h-full bg-slate-50">
+      <div className="w-1/3 border-r border-slate-200 bg-white flex flex-col">
+        <div className="p-4 border-b border-slate-200"><h2 className="text-lg font-bold text-slate-800 mb-3">訊息中心</h2>
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide -mx-1 px-1">{['all', 'instagram', 'facebook', 'whatsapp'].map(p => <button key={p} onClick={() => setActivePlatformFilter(p)} className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${activePlatformFilter === p ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>{p}</button>)}</div>
+        </div>
+        <div className="flex-1 overflow-y-auto">{displayedChats.map(chat => <div key={chat.id} onClick={() => setSelectedChatId(chat.id)} className={`p-4 flex items-start cursor-pointer ${selectedChatId === chat.id ? 'bg-indigo-50' : ''}`}><img src={chat.avatar} className="w-10 h-10 rounded-full"/><div className="ml-3 flex-1"><div className="font-bold text-sm">{chat.user}</div><div className="text-xs text-slate-500">{chat.lastMessage}</div></div></div>)}</div>
+      </div>
+      <div className="flex-1 flex flex-col bg-slate-50">
+        {selectedChat ? <><div className="p-4 bg-white border-b border-slate-200 flex justify-between"><h3 className="font-bold">{selectedChat.user}</h3></div><div className="flex-1 overflow-y-auto p-6 space-y-4">{selectedChat.history?.map((msg, idx) => <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}><div className={`max-w-[70%] p-3 rounded-2xl text-sm ${msg.sender === 'user' ? 'bg-white border border-slate-200' : 'bg-indigo-600 text-white'}`}>{msg.text}</div></div>)}</div><div className="p-4 bg-white border-t"><div className="mb-2"><button onClick={handleAutoReply} className="text-xs bg-slate-100 px-3 py-1 rounded hover:bg-slate-200">快速回覆：常見問題</button></div><div className="flex gap-2"><input value={replyText} onChange={e=>setReplyText(e.target.value)} className="flex-1 border rounded-xl p-2"/><button onClick={handleSendMessage} className="bg-indigo-600 text-white p-2 rounded-xl"><Send size={20}/></button></div></div></> : <div className="flex-1 flex items-center justify-center text-slate-400">選擇對話</div>}
+      </div>
+    </div>
+  );
+};
+
+const AnalyticsView = () => <div className="p-8"><h1 className="text-2xl font-bold">分析 (開發中)</h1></div>;
+const OrdersView = () => <div className="p-8"><h1 className="text-2xl font-bold">訂單 (開發中)</h1></div>;
+const UserManagementView = () => <div className="p-8"><h1 className="text-2xl font-bold">用戶管理 (開發中)</h1></div>;
+
+// --- Main App ---
 const App = () => {
   const [user, setUser] = useState(null);
   const [authData, setAuthData] = useState(null);
@@ -180,19 +225,15 @@ const App = () => {
   // Data Sync
   useEffect(() => {
     if (!user || configError || !db) return;
-    
     const unsubPlatforms = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'platforms'), snap => {
       setData(prev => ({...prev, platforms: snap.docs.map(d => ({id:d.id, ...d.data()}))}));
     });
-    
     const unsubChats = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'chats'), snap => {
       setData(prev => ({...prev, chats: snap.docs.map(d => ({id:d.id, ...d.data()}))}));
     });
-    
     return () => { unsubPlatforms(); unsubChats(); };
   }, [user]);
 
-  // Error Screen
   if (configError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-red-50 p-8">
@@ -210,11 +251,10 @@ const App = () => {
   const renderContent = () => {
     switch(activeTab) {
       case 'dashboard': return <DashboardView chats={data.chats} />;
-      case 'inbox': return <InboxView chats={data.chats} />;
+      case 'inbox': return <InboxView chats={data.chats} activePlatformFilter={'all'} setActivePlatformFilter={()=>{}} />;
       case 'settings': return <SettingsView platforms={data.platforms} />;
       case 'analytics': return <AnalyticsView />;
       case 'orders': return <OrdersView />;
-      case 'ai_settings': return <AIChatbotSettingsView />;
       case 'users': return <UserManagementView />;
       default: return <InboxView chats={data.chats} />;
     }
@@ -231,7 +271,6 @@ const App = () => {
               {id:'settings', label:'平台串接', icon: Settings},
               {id:'analytics', label:'分析', icon: TrendingUp},
               {id:'orders', label:'訂單', icon: ShoppingBag},
-              {id:'ai_settings', label:'AI 設定', icon: Brain},
               {id:'users', label:'用戶管理', icon: Users},
             ].map(item => (
               <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center p-3 rounded text-left ${activeTab===item.id ? 'bg-indigo-600' : 'hover:bg-slate-800 text-slate-400'}`}>
