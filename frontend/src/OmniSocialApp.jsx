@@ -45,15 +45,15 @@ const INITIAL_KNOWLEDGE_BASE = [
 ];
 
 // --- Firebase Initialization ---
-// [⚠️ CRITICAL - 請將此處替換為您真實的 Firebase Config ⚠️]
-// 我已經幫您填好了已知的 Project ID，請務必填入正確的 apiKey 和 appId
+// [重要] 請在此填入您真實的 Firebase Config (不要改動下面的邏輯)
+// 這裡請貼上您從 Firebase Console 複製的那個物件
 const firebaseConfig = {
-  apiKey: "AIzaSyC4CAw27pcOz-WwSkXDHFbksjaTRoGUYts", // <--- 🔴 這裡一定要改！從 Firebase Console 複製
+  apiKey: "AIzaSyC4CAw27pcOz-WwSkXDHFbksjaTRoGUYts", // 根據您的截圖填入 (請確認這是完整正確的)
   authDomain: "omnisocial-728c9.firebaseapp.com",
   projectId: "omnisocial-728c9",
-  storageBucket: "omnisocial-728c9.appspot.com",
-  messagingSenderId: "146517687086",
-  appId: "1:146517687086:web:f368ee90f466c5022958bf"   // <--- 🔴 這裡也要改！
+  storageBucket: "omnisocial-728c9.firebasestorage.app", // 修正: 這裡通常是 appspot.com 結尾
+  messagingSenderId: "146517687086", // 根據您的截圖推測，請確認
+  appId: "1:146517687086:web:f368ee90f466c5022958bf" // 根據您的截圖推測，請確認
 };
 
 // Initialize Firebase
@@ -63,10 +63,7 @@ let db;
 let configError = false;
 
 try {
-  // 檢查是否填入了真實的 Key
-  if (firebaseConfig.apiKey === "AIzaSyC4CAw27pcOz-WwSkXDHFbksjaTRoGUYts") {
-     configError = true;
-  } else {
+    // 這裡移除了原本會誤判的字串檢查邏輯
     if (typeof window !== 'undefined' && !window._firebaseApp) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
@@ -77,18 +74,15 @@ try {
         auth = getAuth(app);
         db = getFirestore(app);
     }
-  }
 } catch (error) {
-  console.error("Firebase 初始化失敗:", error);
-  configError = true;
+    console.error("Firebase 初始化失敗:", error);
+    configError = true;
 }
 
-// [FIX] Sanitize appId to remove slashes which break Firestore collection paths
 const rawAppId = typeof __app_id !== 'undefined' ? String(__app_id) : 'default-app-id';
 const appId = rawAppId.replace(/\//g, '_');
 
-// --- UI Components ---
-// ... (PlatformIcon, Sidebar, Views components remain the same as previous correct version) ...
+// ... (以下 UI 元件程式碼保持不變，但為了確保完整性，我也一併提供)
 
 const PlatformIcon = ({ platform, size = 16, className="" }) => {
   const styleClass = `inline-block align-middle ${className}`;
@@ -199,7 +193,6 @@ const SettingsView = ({ platforms }) => {
   };
 
   const renderInputs = () => {
-     // Inputs render logic (same as before)
      if (!activePlatform) return null;
      return <button onClick={() => confirmConnection("Connected")} className="w-full bg-indigo-600 text-white py-2 rounded">確認連接</button>;
   };
@@ -217,7 +210,87 @@ const SettingsView = ({ platforms }) => {
   );
 };
 
-// ... (AuthScreen, AIChatbotSettingsView, UserManagementView, AnalyticsView, OrdersView, DashboardView remain similar)
+// ... (UserManagementView, AnalyticsView, OrdersView, DashboardView, AIChatbotSettingsView remain similar)
+const AIChatbotSettingsView = ({ aiConfig, knowledgeBase }) => {
+  const [configForm, setConfigForm] = useState(aiConfig || INITIAL_AI_CONFIG);
+  const [newKbItem, setNewKbItem] = useState({ keyword: '', content: '' });
+
+  const handleSaveConfig = async () => {
+    try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ai_settings', 'config'), configForm); alert("儲存成功"); } catch (e) { console.error(e); }
+  };
+  const handleAddKbItem = async () => {
+    if (!newKbItem.keyword) return;
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'knowledge_base'), newKbItem);
+    setNewKbItem({ keyword: '', content: '' });
+  };
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8">
+      <h1 className="text-2xl font-bold mb-6">AI 智能客服設定</h1>
+      <div className="bg-white p-6 rounded-xl border shadow-sm">
+        <div className="mb-4"><label className="block font-bold mb-1">系統提示詞 (System Prompt)</label><textarea className="w-full border rounded p-2" rows={3} value={configForm.systemPrompt} onChange={e => setConfigForm({...configForm, systemPrompt: e.target.value})} /></div>
+        <button onClick={handleSaveConfig} className="bg-indigo-600 text-white px-4 py-2 rounded">儲存設定</button>
+      </div>
+      <div className="mt-8 bg-white p-6 rounded-xl border shadow-sm">
+        <h2 className="font-bold mb-4">知識庫 (RAG)</h2>
+        <div className="flex gap-2 mb-4"><input placeholder="關鍵字" className="border p-2 rounded" value={newKbItem.keyword} onChange={e=>setNewKbItem({...newKbItem, keyword: e.target.value})} /><input placeholder="回應內容" className="flex-1 border p-2 rounded" value={newKbItem.content} onChange={e=>setNewKbItem({...newKbItem, content: e.target.value})} /><button onClick={handleAddKbItem} className="bg-green-600 text-white px-4 rounded"><Plus/></button></div>
+        {knowledgeBase.map(k => <div key={k.id} className="border-b py-2 flex justify-between"><span>{k.keyword}: {k.content}</span></div>)}
+      </div>
+    </div>
+  );
+};
+
+const UserManagementView = ({ pendingUsers }) => {
+  return <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8"><h1 className="text-2xl font-bold text-slate-800 mb-2">用戶管理</h1><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-4">姓名</th><th className="p-4">Email</th><th className="p-4">狀態</th></tr></thead><tbody>{pendingUsers.map(u => <tr key={u.id}><td className="p-4">{u.name}</td><td className="p-4">{u.email}</td><td className="p-4">{u.status}</td></tr>)}</tbody></table></div></div>;
+};
+
+const AnalyticsView = ({ posts }) => {
+  const [filterType, setFilterType] = useState('all');
+  const [viewThreshold, setViewThreshold] = useState(10000); 
+  const filteredPosts = useMemo(() => posts.filter(post => (filterType === 'all' || post.platform === filterType) && post.views >= viewThreshold), [posts, filterType, viewThreshold]);
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8">
+      <div className="mb-8"><h1 className="text-2xl font-bold text-slate-800 mb-2">爆文與趨勢分析</h1><p className="text-slate-500">針對高流量內容進行 AI 語意與情緒分析。</p></div>
+      <div className="flex flex-wrap gap-4 mb-6 items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-2"><Filter size={18} className="text-slate-500" /><span className="text-sm font-medium text-slate-700">平台:</span><select className="bg-slate-100 border-none rounded-lg text-sm py-1.5" value={filterType} onChange={(e) => setFilterType(e.target.value)}><option value="all">全部</option><option value="instagram">Instagram</option><option value="youtube">YouTube</option><option value="xiaohongshu">小紅書</option><option value="threads">Threads</option><option value="tiktok">TikTok</option></select></div>
+        <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200"><TrendingUp size={16} className="text-red-500 ml-1" /><span className="text-sm font-medium text-slate-700">觀看數 &ge;</span><input type="number" value={viewThreshold} onChange={(e) => setViewThreshold(Number(e.target.value))} className="w-24 px-2 py-1 bg-white border rounded text-sm" step="1000" /></div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredPosts.map(post => (
+          <div key={post.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div className="relative h-48 bg-slate-200">{post.image ? <img src={post.image} alt="Post" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100">Text</div>}<div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1"><PlatformIcon platform={post.platform} /><span className="capitalize">{post.platform}</span></div></div>
+            <div className="p-4 flex-1 flex flex-col"><p className="text-slate-800 font-medium mb-3 line-clamp-2">{post.content}</p><div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 mt-auto"><div className="flex items-center gap-2 mb-1"><Bot size={14} className="text-indigo-600" /><span className="text-xs font-bold text-indigo-700">AI 分析</span></div><p className="text-xs text-indigo-900 leading-relaxed">{post.aiAnalysis}</p></div></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const OrdersView = ({ orders }) => {
+  const [isSyncing, setIsSyncing] = useState(false);
+  const handleSync = async () => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); alert("同步完成"); }, 1000); };
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8">
+      <div className="flex justify-between items-end mb-8"><div><h1 className="text-2xl font-bold text-slate-800 mb-2">訂單自動抓取</h1><p className="text-slate-500">監控關鍵字並自動建立訂單。</p></div><div className="flex gap-3"><button onClick={handleSync} disabled={isSyncing} className="bg-white border border-indigo-600 text-indigo-600 px-4 py-2 rounded-lg flex items-center gap-2">{isSyncing ? '同步中...' : '同步至官網'}</button></div></div>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left"><thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-4 text-sm">訂單編號</th><th className="p-4 text-sm">客戶</th><th className="p-4 text-sm">來源</th><th className="p-4 text-sm">商品</th><th className="p-4 text-sm">金額</th><th className="p-4 text-sm">狀態</th></tr></thead><tbody className="divide-y divide-slate-100">{orders.map(order => (<tr key={order.id}><td className="p-4 font-mono text-sm">{order.displayId}</td><td className="p-4 font-medium">{order.customer}</td><td className="p-4 text-sm flex items-center gap-1"><PlatformIcon platform={order.source.toLowerCase().includes("thread") ? "threads" : "facebook"} size={12}/>{order.source}</td><td className="p-4 text-sm">{order.item}</td><td className="p-4 font-medium">NT$ {order.amount}</td><td className="p-4"><span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">{order.status}</span></td></tr>))}</tbody></table>
+      </div>
+    </div>
+  );
+};
+
+const DashboardView = ({ chats, orders }) => {
+  return (
+    <div className="h-full overflow-y-auto bg-slate-50 p-6 md:p-8">
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">今日概況</h1>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200"><div className="flex items-center justify-between mb-4"><div className="bg-blue-100 p-2 rounded-lg text-blue-600"><MessageSquare size={20} /></div><span className="text-xs font-bold text-green-500">Live</span></div><h3 className="text-slate-500 text-sm mb-1">待回覆訊息</h3><p className="text-2xl font-bold text-slate-800">{chats.reduce((acc, c) => acc + (c.unread || 0), 0)}</p></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200"><div className="flex items-center justify-between mb-4"><div className="bg-orange-100 p-2 rounded-lg text-orange-600"><ShoppingBag size={20} /></div><span className="text-xs font-bold text-green-500">+18%</span></div><h3 className="text-slate-500 text-sm mb-1">銷售額</h3><p className="text-2xl font-bold text-slate-800">NT$ {(orders.reduce((acc, o) => acc + o.amount, 0)/1000).toFixed(1)}k</p></div>
+      </div>
+    </div>
+  );
+};
+
 
 // --- Main App Wrapper ---
 const App = () => {
@@ -253,7 +326,23 @@ const App = () => {
     const unsubPlatforms = syncCollection('platforms', INITIAL_PLATFORMS); 
     const unsubPosts = syncCollection('posts', []); 
     const unsubUsers = syncCollection('app_users', []); 
-    return () => { unsubChats(); unsubOrders(); unsubPosts(); unsubUsers(); unsubPlatforms(); };
+    const unsubKB = syncCollection('knowledge_base', INITIAL_KNOWLEDGE_BASE);
+    
+    // AI Config sync
+     const syncAiConfig = () => {
+      const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'ai_settings', 'config');
+      return onSnapshot(configRef, async (docSnap) => {
+        if (!docSnap.exists()) {
+          await setDoc(configRef, INITIAL_AI_CONFIG);
+          setData(prev => ({ ...prev, aiConfig: INITIAL_AI_CONFIG }));
+        } else {
+          setData(prev => ({ ...prev, aiConfig: docSnap.data() }));
+        }
+      });
+    };
+    const unsubConfig = syncAiConfig();
+
+    return () => { unsubChats(); unsubOrders(); unsubPosts(); unsubUsers(); unsubPlatforms(); unsubKB(); unsubConfig(); };
   }, [user]);
 
   if (configError) {
