@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- 安全性設定 (CSP)：允許必要的腳本執行 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    
     <title>OmniSocial AI Platform</title>
     
-    <!-- 引入 Tailwind CSS -->
+    <!-- Tailwind CSS 樣式庫 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -20,8 +24,10 @@
     </script>
   </head>
   <body>
+    <!-- React 應用程式掛載點 -->
     <div id="root"></div>
-    <!-- 這裡指向程式入口 -->
+    
+    <!-- 指向程式主入口 -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
