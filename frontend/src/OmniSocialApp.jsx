@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Brain, Zap, Plus, Edit, Save, Cpu, AlertTriangle, Sparkles
+  MessageSquare, ShoppingBag, BarChart2, Settings, Search, Send, Bot, Filter, TrendingUp, Users, Eye, CheckCircle, Menu, X as XIcon, MessageCircle, Instagram, Facebook, Youtube, Twitter, Image as ImageIcon, Phone, Paperclip, Link2, Trash2, Shield, Smartphone, Key, QrCode, LogOut, UserPlus, Lock, Mail, User, FileText, ShieldCheck, Globe, RefreshCw, Server, ArrowRight, Database, Video, Chrome, Brain, Zap, Plus, Edit, Save, Cpu, AlertTriangle
 } from 'lucide-react';
 
+// --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDocs, setDoc, deleteDoc, orderBy, getDoc, writeBatch } from 'firebase/firestore';
 
-// --- 1. 靜態資料 (Initial Data) ---
+// --- Initial Data ---
 const INITIAL_CHATS = [
   { displayId: 1, user: "Amy Chen", platform: "instagram", avatar: "https://i.pravatar.cc/150?u=1", lastMessage: "請問這個紅色包包還有現貨嗎？", timestamp: "10:23 AM", unread: 2, history: [{ sender: "user", text: "你好，我看這款很久了" }, { sender: "user", text: "請問這個紅色包包還有現貨嗎？" }] },
   { displayId: 2, user: "Jason Wu", platform: "facebook", avatar: "https://i.pravatar.cc/150?u=2", lastMessage: "你們的營業時間是幾點？", timestamp: "09:15 AM", unread: 0, history: [{ sender: "user", text: "嗨" }, { sender: "user", text: "你們的營業時間是幾點？" }, { sender: "ai", text: "您好！我們的營業時間是週一至週五，早上10點到晚上9點。" }] }
@@ -24,10 +25,9 @@ const INITIAL_PLATFORMS = [
   { id: 'telegram', name: 'Telegram', type: 'token', description: '輸入 Bot Token', connected: false, accountName: null },
   { id: 'youtube', name: 'YouTube', type: 'oauth', description: '管理頻道留言', connected: false, accountName: null },
 ];
-const INITIAL_AI_CONFIG = { id: 'config', provider: 'openai', apiKey: '', model: 'gpt-4o', systemPrompt: '你是一個專業客服。', temperature: 0.7 };
-const INITIAL_KNOWLEDGE_BASE = [{ keyword: '營業時間', content: '週一至週五 10:00-21:00' }];
+const INITIAL_KB = [{ keyword: '營業時間', content: '週一至週五 10:00-21:00' }];
 
-// --- 2. Firebase 設定 (請填入真實資料) ---
+// --- 2. Firebase 設定 (請務必填入真實資料) ---
 const firebaseConfig = {
   apiKey: "AIzaSyC4CAw27pcOz-WwSkXDHFbksjaTRoGUYts",
   authDomain: "omnisocial-728c9.firebaseapp.com",
@@ -65,29 +65,26 @@ const appId = rawAppId.replace(/\//g, '_');
 
 // --- 3. 子元件定義 (必須在 App 之前！) ---
 
-// 3.1 圖示元件
-function PlatformIcon({ platform, size = 16 }) {
+const PlatformIcon = ({ platform, size = 16 }) => {
   const p = platform ? platform.toLowerCase() : '';
   if(p==='instagram') return <Instagram size={size} className="text-pink-600"/>;
   if(p==='facebook') return <Facebook size={size} className="text-blue-600"/>;
   if(p==='whatsapp') return <Phone size={size} className="text-green-500"/>;
   if(p==='website') return <Globe size={size} className="text-indigo-500"/>;
   return <MessageCircle size={size}/>;
-}
+};
 
 // 3.2 登入畫面 (解決 ReferenceError 的關鍵)
 function AuthScreen({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({ username: 'admin', password: 'password', email: '' });
   
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    // 模擬登入成功，直接進入系統
     onLogin({role: 'admin', username: formData.username});
   };
 
-  const handleSocial = async (provider) => {
-     // 模擬社群登入
+  const handleSocial = (provider) => {
      onLogin({role: 'user', username: `${provider}_user`});
   };
 
@@ -96,7 +93,6 @@ function AuthScreen({ onLogin }) {
       <div className="bg-white p-8 rounded-xl w-full max-w-md text-center">
         <div className="mb-6 flex justify-center"><Bot size={48} className="text-indigo-600"/></div>
         <h2 className="text-2xl font-bold mb-6 text-slate-800">{isLogin ? '登入 OmniAI' : '註冊'}</h2>
-        
         <form onSubmit={handleSubmit} className="space-y-4">
           <input className="w-full p-3 border rounded-xl" placeholder="帳號 (admin)" value={formData.username} onChange={e=>setFormData({...formData, username:e.target.value})}/>
           <input className="w-full p-3 border rounded-xl" type="password" placeholder="密碼 (password)" value={formData.password} onChange={e=>setFormData({...formData, password:e.target.value})}/>
@@ -123,39 +119,20 @@ function AuthScreen({ onLogin }) {
 
 // 3.3 設定介面
 function SettingsView({ platforms }) {
-  const [modalOpen, setModalOpen] = useState(false);
-  const [activePlatform, setActivePlatform] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
 
-  const handleConnectClick = (platform) => { setActivePlatform(platform); setModalOpen(true); };
-  const handleDisconnect = async (id, docId) => { if (confirm("解除連接？")) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', docId), { connected: false, accountName: null }); };
-  
-  const confirmConnection = async (accountName) => {
-    if (!activePlatform) return;
-    setModalOpen(false);
-    setTimeout(async () => {
-      try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', activePlatform.id), { connected: true, accountName: accountName });
-        alert(`${activePlatform.name} 連接成功！`);
-      } catch(e) { console.error(e); alert("連接失敗"); }
-      setActivePlatform(null);
-    }, 1000);
-  };
-
   const initializePlatforms = async () => {
+    if(configError) return alert("Firebase 設定有誤，無法寫入");
     setIsInitializing(true);
     try {
       const batch = writeBatch(db);
       INITIAL_PLATFORMS.forEach(p => batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'platforms', p.id), p));
-      INITIAL_CHATS.forEach(async c => await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'chats'), c));
       await batch.commit();
-      alert("初始化成功！請重新整理頁面。");
+      alert("初始化成功！正在重新整理...");
       window.location.reload();
     } catch (e) { console.error(e); alert("初始化失敗: " + e.message); }
     setIsInitializing(false);
   };
-
-  const renderInputs = () => (<div><input className="w-full border p-2 rounded mb-4" placeholder="輸入憑證"/><button onClick={()=>confirmConnection("Connected")} className="w-full bg-indigo-600 text-white py-2 rounded">確認</button></div>);
 
   return (
     <div className="p-8">
@@ -170,7 +147,7 @@ function SettingsView({ platforms }) {
           <div className="text-center py-20 bg-white rounded-xl border border-dashed">
               <Database className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-semibold text-gray-900">無資料</h3>
-              <p className="mt-1 text-sm text-gray-500">資料庫目前是空的，請點擊右上角按鈕進行初始化。</p>
+              <p className="mt-1 text-sm text-gray-500">請點擊右上角按鈕進行初始化。</p>
           </div>
       ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -181,13 +158,10 @@ function SettingsView({ platforms }) {
                   <span className={`text-xs px-2 py-1 rounded ${p.connected?'bg-green-100 text-green-700':'bg-slate-100'}`}>{p.connected?'已連接':'未連接'}</span>
                 </div>
                 <p className="text-sm text-slate-500">{p.description}</p>
-                {!p.connected && <button onClick={()=>handleConnectClick(p)} className="mt-4 w-full bg-indigo-50 text-indigo-600 py-2 rounded text-sm font-bold">連接</button>}
-                {p.connected && <button onClick={()=>handleDisconnect(p.id, p.id)} className="mt-4 w-full text-red-500 border border-red-200 py-2 rounded text-sm">解除連接</button>}
               </div>
             ))}
           </div>
       )}
-      {modalOpen && activePlatform && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white p-6 rounded-xl w-96"><h3 className="font-bold mb-4">連接 {activePlatform.name}</h3><div className="mb-4">{renderInputs()}</div><button onClick={()=>setModalOpen(false)} className="w-full mt-2 text-slate-500">取消</button></div></div>}
     </div>
   );
 }
@@ -210,7 +184,7 @@ const InboxView = ({ chats, activePlatformFilter, setActivePlatformFilter }) => 
     setReplyText("");
   };
 
-  // 簡單自動回覆 (移除 Gemini, 回歸基礎)
+  // 簡單自動回覆 (規則式)
   const handleAutoReply = () => {
       if(!selectedChat) return;
       let reply = "您好，專人稍後會為您服務。";
@@ -248,12 +222,16 @@ function App() {
 
   useEffect(() => {
     if (configError) return;
-    const init = async () => { try { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else await signInAnonymously(auth); } catch (e) { console.error(e); } };
+    const init = async () => { try { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else await signInAnonymously(auth); } catch (e) { console.error("Auth Error:", e); } };
     init(); return onAuthStateChanged(auth, setUser);
   }, []);
 
   useEffect(() => {
     if (!user || configError || !db) return;
+    const sync = (col, initial) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', col), snap => {
+      if(snap.empty && initial) initial.forEach(i => col==='platforms'?setDoc(doc(db,'artifacts',appId,'public','data',col,i.id),i):addDoc(collection(db,'artifacts',appId,'public','data',col),i));
+      setData(prev => ({...prev, [col==='app_users'?'users':col]: snap.docs.map(d=>({id:d.id, ...d.data()}))}));
+    });
     const unsubPlatforms = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'platforms'), snap => {
       setData(prev => ({...prev, platforms: snap.docs.map(d => ({id:d.id, ...d.data()}))}));
     });
@@ -316,6 +294,6 @@ function App() {
       </main>
     </div>
   );
-}
+};
 
 export default App;
