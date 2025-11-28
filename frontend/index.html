@@ -3,22 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- Content Security Policy (CSP) 設定 -->
-    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
-    
     <title>OmniSocial AI Platform</title>
     
-    <!-- Tailwind CSS CDN -->
+    <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Tailwind 設定 -->
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              primary: '#4f46e5', // Indigo-600
+              primary: '#4f46e5',
             }
           }
         }
@@ -27,8 +21,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- [關鍵修正] 移除 type="module"，改用 defer 並加上 type="text/babel" 或讓 Vite 處理 -->
-    <!-- 在 Vite 開發環境中，標準寫法如下： -->
+    <!-- 這裡指向程式入口 -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
